@@ -2,10 +2,12 @@ from read_data import read_df
 import numpy as np
 from scipy.signal import savgol_filter
 from scipy.constants import R
+import statsmodels.api as sm
+lowess = sm.nonparametric.lowess
 
 
 def remove_error_data(data, col):
-    threshold = 1
+    threshold = 0.1
     previous = data[col].iloc[0]
     data = data.reset_index()
     error_points = []
@@ -27,7 +29,7 @@ def nearest(df, col, val):
     return df.iloc[(df[col] - val).abs().argsort()[0], :]
 
 
-def find_plateau(data, threshold=0.0001):
+def find_plateau(data, threshold=0.0001, custom=[]):
     data['MA'] = data['Weight (mg)'].rolling(window=25).mean()
     data['dMA'] = data['MA'].diff()
     def f(x): return step_f(x, threshold)
@@ -43,7 +45,7 @@ def find_plateau(data, threshold=0.0001):
                 intervals.append(
                     (data.iloc[i[0], 1], data.iloc[i[-1], 1]))
             i = []
-    return [nearest(data, 'Temperature (°C)', (i[0]+i[1])/2)['Weight (mg)'] for i in intervals]
+    return [nearest(data, 'Temperature (°C)', (i[0]+i[1])/2)['Weight (mg)'] for i in intervals] if custom == [] else custom
 
 
 def get_reaction(data, m_o, m_f):
@@ -78,8 +80,33 @@ def differentiate(data):
     return data
 
 
+def differentiate_T(data):
+    def d(index):
+        return (data['T'].iloc[index+1]-data['T'].iloc[index]) / (data['Temperature (°C)'].iloc[index+1]-data['Temperature (°C)'].iloc[index])
+
+    dT = []
+    for index in range(data.shape[0]):
+        if index == 0:
+            dTdt = d(index)
+        elif index == data.shape[0]-1:
+            dTdt = d(index-1)
+        else:
+            dTdt = (d(index-1)+d(index))/2
+        dT.append(dTdt)
+
+    data['dT'] = dT
+    return data
+
+
 def smooth(data):
-    data['s_da'] = savgol_filter(data['d_alpha'], 100, 3)
+    data['s_da'] = lowess(data['d_alpha'],
+                          data['T'], frac=0.02, return_sorted=False)
+    return data
+
+
+def smooth_E(data):
+    data['s_Ea'] = lowess(data['Ea (kJ/mol)'],
+                          data['alpha'], frac=0.02, return_sorted=False)
     return data
 
 
